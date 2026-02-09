@@ -1,0 +1,151 @@
+[
+    {
+        "oshwaUid": "PL000024",
+        "responsibleParty": "Norbert",
+        "country": "Poland",
+        "publicContact": "contact@icmt.cc",
+        "projectName": "\"WatchMe\"",
+        "projectWebsite": "https://icmt.cc/p/diy-analog-watch-/-2004-movement-info/",
+        "projectVersion": "1",
+        "projectDescription": "Watch me tell you about this watch ;\r\n\r\nOpen Source Automatic watch - Based on the no name \"2004 movement\"\r\nThis project includes the 3D printable files to make the project, and parts list.",
+        "primaryType": "Wearables",
+        "additionalType": [
+            "3D Printing",
+            "Enclosure",
+            "Wearables"
+        ],
+        "projectKeywords": [
+            "watch",
+            " automatic",
+            " 3d print",
+            " automatic watch"
+        ],
+        "citations": [],
+        "documentationUrl": "https://icmt.cc/p/diy-analog-watch-/-2004-movement-info/",
+        "hardwareLicense": "CC-BY-SA-4.0",
+        "softwareLicense": "No software",
+        "documentationLicense": "CC-BY-SA-4.0",
+        "certificationDate": "2025-10-10T00:00-04:00"
+    },
+    {
+        "oshwaUid": "SE000004",
+        "responsibleParty": "arturo182",
+        "country": "Sweden",
+        "publicContact": "oledpmod@solder.party",
+        "projectName": "0.95\" OLED PMOD",
+        "projectWebsite": "https://github.com/arturo182/pmod_rgb_oled_0.95in/",
+        "projectVersion": "1.0",
+        "projectDescription": "A tiny color OLED!\r\n\r\nPerfect solution if you need a small display with vivid, high-contrast 16-bit color. PMOD connector can be used with FPGA and MCU dev boards\r\n\r\nThe display itself is a 0.95&quot; color OLED, the resolution is 96x64 RGB pixels.\r\n\r\nThe display is driven by the SSD1331 IC, you can control it with a 4-wire write-only SPI. The board only supports 3.3V logic.",
+        "primaryType": "Other",
+        "additionalType": [
+            "Electronics"
+        ],
+        "projectKeywords": [
+            "oled",
+            "display",
+            "pmod"
+        ],
+        "citations": [],
+        "documentationUrl": "https://github.com/arturo182/pmod_rgb_oled_0.95in/",
+        "hardwareLicense": "CERN",
+        "softwareLicense": "No software",
+        "documentationLicense": "CC BY-SA",
+        "certificationDate": "2020-05-04T00:00-04:00"
+    },
+    {
+        "oshwaUid": "IT000010",
+        "responsibleParty": "Sol Bekic",
+        "country": "Italy",
+        "publicContact": "s+oshwa@s-ol.nu",
+        "projectName": "0x33.board",
+        "projectWebsite": "https://s-ol.nu/0x33.board",
+        "projectVersion": "r3",
+        "projectDescription": "The 0x33.board is a 48-key isomorphic MIDI controller.\r\n\r\nIt supports USB-MIDI, TRS-MIDI (out only) and I2C. It also has a jack for 1-bit headphone output. The 48 keys of the main note surface are arranged in four staggered rows of twelve keys each. Each key has independent RGB backlighting that can be used to highlight scales, melodies or chords.",
+        "primaryType": "Electronics",
+        "additionalType": [
+            "Arts",
+            "Tool",
+            "Other"
+        ],
+        "projectKeywords": [
+            "MIDI",
+            " mechanical",
+            " keyboard",
+            " RP2040"
+        ],
+        "citations": [],
+        "documentationUrl": "https://s-ol.nu/0x33.board",
+        "hardwareLicense": "CERN-OHL-S-2.0",
+        "softwareLicense": "MIT",
+        "documentationLicense": "CC-BY-4.0",
+        "certificationDate": "2022-08-05T00:00-04:00"
+    },
+    {
+        "oshwaUid": "DE000108",
+        "responsibleParty": "Conor Burns",
+        "country": "Germany",
+        "publicContact": "mail@0xcb.dev",
+        "projectName": "0xCB",
+        "projectWebsite": "https://github.com/0xCB-dev/0xcb-1337",
+        "projectVersion": "1.1",
+        "previousVersions": [
+            "DE000104"
+        ],
+        "projectDescription": "Mechanical Macropad, programmable with QMK and VIA",
+        "primaryType": "Electronics",
+        "additionalType": [
+            "3D Printing",
+            "Manufacturing"
+        ],
+        "projectKeywords": [
+            "macropad",
+            " qmk",
+            " arduino",
+            " keyboard"
+        ],
+        "citations": [
+            {
+                "url": "https://github.com/qmk/qmk_firmware",
+                "title": "QMK"
+            }
+        ],
+        "documentationUrl": "https://github.com/0xCB-dev/0xcb-1337/blob/main/README.md",
+        "hardwareLicense": "CERN",
+        "softwareLicense": "GPL",
+        "documentationLicense": "CC BY-SA",
+        "certificationDate": "2021-04-16T00:00-04:00"
+    },
+    {
+        "oshwaUid": "DE000104",
+        "responsibleParty": "Conor Burns",
+        "country": "Germany",
+        "publicContact": "mail@0xcb.dev",
+        "projectName": "0xCB",
+        "projectWebsite": "https://github.com/conor-burns/0xcb-1337",
+        "projectVersion": "1.0",
+        "projectDescription": "Open Source PCB for a QMK macropad",
+        "primaryType": "Electronics",
+        "additionalType": [
+            "3D Printing",
+            "Electronics",
+            "Manufacturing"
+        ],
+        "projectKeywords": [
+            "macropad",
+            "qmk",
+            "arduino",
+            "keyboard"
+        ],
+        "citations": [
+            {
+                "url": "https://github.com/qmk/qmk_firmware",
+                "title": "QMK Firmware"
+            }
+        ],
+        "documentationUrl": "https://github.com/Conor-Burns/0xcb-1337/blob/main/README.md",
+        "hardwareLicense": "CERN",
+        "softwareLicense": "GPL",
+        "documentationLicense": "CC BY",
+        "certificationDate": "2021-03-24T00:00-04:00"
+    }
+]
