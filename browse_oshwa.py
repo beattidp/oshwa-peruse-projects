@@ -1,9 +1,9 @@
+#!/usr/bin/env python3
+''' Docstring for oshwa-peruse-projects.browse_oshwa
 
-'''
-Docstring for oshwa-peruse-projects.browse_oshwa
+Referencing OSHWA projects at https://certification.oshwa.org/list.html
 
-https://playwright.dev/python/docs/api/class-playwright
-https://www.blog.pythonlibrary.org/2010/05/22/wxpython-and-threads/
+
 
 '''
 
@@ -19,9 +19,10 @@ from fetcher.PlaywrightWorker import PlaywrightWorker
 IMG_DFLT_WID = 500  # not 600
 IMG_DFLT_HGT = 500 #800  # not 450
 
+
 class Project(object):
     def __init__(self, uid, country, name, site_url,
-                  description, doc_url, primary_category ):
+                  description, doc_url, primary_category, screenshot ):
         self.uid=uid
         self.country=country
         self.name=name
@@ -29,6 +30,8 @@ class Project(object):
         self.description=description
         self.doc_url=doc_url
         self.primary_category=primary_category
+        self.screenshot=screenshot
+
 
     def __repr__(self):
         return 'Project: %s-"%s"' % (self.uid, self.name)
@@ -208,6 +211,7 @@ class DataListModel(dv.PyDataViewModel):
                        4 : node.site_url,
                        5 : node.description,
                        6 : node.doc_url,
+                       7 : node.screenshot
                        }
             return mapper[col]
 
@@ -246,6 +250,9 @@ class DataListModel(dv.PyDataViewModel):
                 node.description = value
             elif col == 6:
                 node.doc_url = value
+            elif col == 7:
+                node.screenshot = value
+
         return True
 
 
@@ -286,21 +293,34 @@ class ViewPanel(wx.Panel):
             tr = dv.DataViewTextRenderer()
             c0 = dv.DataViewColumn("Category",   # title
                                    tr,        # renderer
-                                   6)         # data model column
+                                   0)         # data model column
             self.dvc.AppendColumn(c0)
         else:
             # otherwise there are convenience methods for the simple cases
-            c0 = self.dvc.AppendTextColumn("Category",   6)
+            c0 = self.dvc.AppendTextColumn("Category",   0)
 
         c0.SetMinWidth(80)
         c0.SetAlignment(wx.ALIGN_LEFT)
 
-        c1 = self.dvc.AppendTextColumn("Project ID",   0, width=180, mode=dv.DATAVIEW_CELL_INERT)
-        c2 = self.dvc.AppendTextColumn("Country",   1, width=180, mode=dv.DATAVIEW_CELL_INERT)
-        c3 = self.dvc.AppendTextColumn("Name",    2, width=180, mode=dv.DATAVIEW_CELL_INERT)
-        c4 = self.dvc.AppendTextColumn("Site URL", 3, width=180, mode=dv.DATAVIEW_CELL_ACTIVATABLE)
-        c5 = self.dvc.AppendTextColumn("Description", 4, width=180, mode=dv.DATAVIEW_CELL_INERT)
-        c6 = self.dvc.AppendTextColumn("Doc URL", 5, width=40,  mode=dv.DATAVIEW_CELL_ACTIVATABLE)
+        c1 = self.dvc.AppendTextColumn("Project ID",   1, width=180, mode=dv.DATAVIEW_CELL_INERT)
+        c2 = self.dvc.AppendTextColumn("Country",   2, width=180, mode=dv.DATAVIEW_CELL_INERT)
+        c3 = self.dvc.AppendTextColumn("Name",    3, width=180, mode=dv.DATAVIEW_CELL_INERT)
+        c4 = self.dvc.AppendTextColumn("Site URL", 4, width=180, mode=dv.DATAVIEW_CELL_ACTIVATABLE)
+        c5 = self.dvc.AppendTextColumn("Description", 5, width=180, mode=dv.DATAVIEW_CELL_INERT)
+        c6 = self.dvc.AppendTextColumn("Doc URL", 6, width=40,  mode=dv.DATAVIEW_CELL_ACTIVATABLE)
+        
+        if 0:
+            br = dv.DataViewBitmapRenderer(mode=dv.DATAVIEW_CELL_INERT)
+            c7 = dv.DataViewColumn(self.makeBlankBitmapBundle(),   # title
+                                   br,        # renderer
+                                   7,
+                                   width=int(IMG_DFLT_WID/2))         # data model column
+            self.dvc.AppendColumn(c7)            
+        else:
+            self.dvc.AppendBitmapColumn("Screen Shot",
+                                        7,
+                                        width=int(IMG_DFLT_WID/2),
+                                        mode=dv.DATAVIEW_CELL_INERT)
 
         # Notice how we pull the data from col 3, but this is the 6th column
         # added to the DVC. The order of the view columns is not dependent on
@@ -331,6 +351,16 @@ class ViewPanel(wx.Panel):
         b.Disable()
         f.Show()
 
+    def makeBlankBitmapBundle(self):
+        # Just a little helper function to make an empty image for our
+        # model to use.
+        empty = wx.Bitmap(int(IMG_DFLT_WID/2),int(IMG_DFLT_HGT/2),32)
+        dc = wx.MemoryDC(empty)
+        dc.SetBackground(wx.Brush((0,0,0,0)))
+        dc.Clear()
+        del dc
+        bun = wx.BitmapBundle.FromBitmap(empty)
+        return bun
 
 class OSHWAFrame(wx.Frame):
     def __init__(self):
@@ -412,6 +442,15 @@ class OSHWAFrame(wx.Frame):
         # vbox.Add(fetch_btn, 0, wx.ALL | wx.CENTER, 10)
         # panel.SetSizer(vbox)
 
+    def makeBlankBitmap(self):
+        # make initial empty image for model to use.
+        empty = wx.Bitmap(int(IMG_DFLT_WID/2),int(IMG_DFLT_HGT/2),32)
+        dc = wx.MemoryDC(empty)
+        dc.SetBackground(wx.Brush((0,0,0,0)))
+        dc.Clear()
+        del dc
+        return empty
+
     def on_fetch_click(self, event):
         # In a real app, these come from your API result selection
         # pid = "US000556"
@@ -423,6 +462,9 @@ class OSHWAFrame(wx.Frame):
         self.worker.request_screenshot(pid, url)
 
     def on_screenshot_complete(self, project_id, path):
+        # remove from the worker's "pending" screenshots list
+        self.worker.pending.pop(project_id)
+
         self.status.SetLabel(f"Displaying: {project_id}")
         img = wx.Image(path, wx.BITMAP_TYPE_ANY)
         # Scale to fit UI
@@ -453,7 +495,11 @@ class OSHWAFrame(wx.Frame):
                                 item.get('projectWebsite',''),
                                 item.get('projectDescription',''),
                                 item.get('documentationUrl',''),
-                                category_name)
+                                category_name,
+                                "Screenshot pending")
+#TODO:
+# 02:13:16: Debug: Wrong type returned from the model for column 7: wxBitmapBundle required but actual type is string
+              
               category = self.data.get(category_name)
               if category is None:
                 category = Category(category_name)

@@ -17,6 +17,8 @@ from playwright.async_api import async_playwright
 VP_WIDTH = 1024
 VP_HEIGHT = 768
 
+MAX_CONCURRENT_REQUESTS = 10
+
 class PlaywrightWorker(threading.Thread):
     def __init__(self, notify_window, cache_dir="cache",
                   viewport_width=VP_WIDTH, viewport_height=VP_HEIGHT):
@@ -29,9 +31,12 @@ class PlaywrightWorker(threading.Thread):
         self.context = None
         self.vp_width = viewport_width
         self.vp_height = viewport_height
-        
+
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
+
+        self.queue_list_backlog = list()
+        self.pending = dict()
 
     def run(self):
         """Sets up the async event loop and stays alive."""
@@ -55,10 +60,21 @@ class PlaywrightWorker(threading.Thread):
 
     def request_screenshot(self, project_id, url):
         """Called from wxPython thread to submit work to the async thread."""
-        if self.loop:
-            asyncio.run_coroutine_threadsafe(
-                self._capture_task(project_id, url), self.loop
-            )
+
+        # always add first to queue_list_backlog as tuple
+        self.queue_list_backlog.append((project_id,url))
+        # we haveto throttle this, to stay within MAX_CONCURRENT_REQUESTS
+        if (len(self.pending) <= MAX_CONCURRENT_REQUESTS):
+            while len(self.queue_list_backlog) and len(self.pending) <= MAX_CONCURRENT_REQUESTS:
+                # FIFO-style, pop the oldest which is at position zero
+                project_id, url = self.queue_list_backlog.pop(0)
+                self.pending.update({project_id: 'pending'})
+
+                # add another screen-capture task
+                if self.loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self._capture_task(project_id, url), self.loop
+                    )
 
     async def _capture_task(self, project_id, url):
         """The actual async rendering logic."""
@@ -66,8 +82,10 @@ class PlaywrightWorker(threading.Thread):
         
         # Skip if already cached
         if os.path.exists(save_path):
+            # Signal back to wxPython
             wx.CallAfter(self.notify_window.on_screenshot_complete, project_id, save_path)
             return
+
 
         page = await self.context.new_page()
         try:
