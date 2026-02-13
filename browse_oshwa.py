@@ -19,6 +19,9 @@ from fetcher.PlaywrightWorker import PlaywrightWorker
 IMG_DFLT_WID = 500  # not 600
 IMG_DFLT_HGT = 500 #800  # not 450
 
+CACHE_DIR = "cache"
+
+USE_FULL_JSON = False
 
 class Project(object):
     def __init__(self, uid, country, name, site_url,
@@ -89,6 +92,10 @@ class DataListModel(dv.PyDataViewModel):
         self.data = data
         self.log = log
 
+        self.panel_ref = None
+
+        self.make_screenshots_index(data)
+
         # The PyDataViewModel derives from both DataViewModel and from
         # DataViewItemObjectMapper, which has methods that help associate
         # data view items with Python objects. Normally a dictionary is used
@@ -97,6 +104,14 @@ class DataListModel(dv.PyDataViewModel):
         # WeakValueDictionary instead.
         self.UseWeakRefs(True)
 
+    def make_screenshots_index(self,data):
+        self.screenshots_index = dict()
+        for i in range(0,len(data)):
+            category = data[i]
+            for j in range(0,len(category.projects)):
+                project = category.projects[j]
+                #print(f" {project.uid}",end="")
+                self.screenshots_index.update({ project.uid: project.screenshot })
 
     # Report how many columns this model provides data for.
     def GetColumnCount(self):
@@ -111,6 +126,7 @@ class DataListModel(dv.PyDataViewModel):
                    4 : 'string',
                    5 : 'string',
                    6 : 'string',
+                   7 : 'wxBitmapBundle'
                    }
         return mapper[col]
 
@@ -188,6 +204,10 @@ class DataListModel(dv.PyDataViewModel):
         return True
 
 
+    #TODO:
+    # 00:26:39: Debug: Wrong type returned from the model
+    #           for column 7: wxBitmapBundle required but actual type is PyObject
+
     def GetValue(self, item, col):
         # Return the value to be displayed for this item and column. For this
         # example we'll just pull the values from the data objects we
@@ -204,6 +224,7 @@ class DataListModel(dv.PyDataViewModel):
             return node.name
 
         elif isinstance(node, Project):
+            node.screenshot = self.get_or_queue_bitmap(node.uid, node.site_url)
             mapper = { 0 : node.primary_category,
                        1 : node.uid,
                        2 : node.country,
@@ -218,7 +239,14 @@ class DataListModel(dv.PyDataViewModel):
         else:
             raise RuntimeError("unknown node type")
 
+    def get_or_queue_bitmap(self, uid, site_url):
+        #node.screenshot.GetBitmap(node.screenshot.GetDefaultSize())
+        hit = os.path.join(CACHE_DIR, f"{uid}.png")
+        if not os.path.exists(hit):
+            self.panel_ref.GetParent().worker.request_screenshot(uid, site_url)
 
+        return self.screenshots_index[uid]
+               
 
     def GetAttr(self, item, col, attr):
         ##self.log.write('GetAttr')
@@ -272,6 +300,11 @@ class ViewPanel(wx.Panel):
                                    | dv.DV_MULTIPLE
                                    )
 
+        if data is None:
+            # Load the project data from JSON into a list of dictionary entries
+            # named self.items then load the projects into the model
+            data = self.load_project_data(CACHE_DIR)
+
         # Create an instance of our model...
         if model is None:
             self.model = DataListModel(data, log)
@@ -279,6 +312,9 @@ class ViewPanel(wx.Panel):
         else:
             self.model = model
             newModel = False
+
+        self.model.panel_ref = self
+
 
         # Tell the DVC to use the model
         self.dvc.AssociateModel(self.model)
@@ -309,24 +345,18 @@ class ViewPanel(wx.Panel):
         c5 = self.dvc.AppendTextColumn("Description", 5, width=180, mode=dv.DATAVIEW_CELL_INERT)
         c6 = self.dvc.AppendTextColumn("Doc URL", 6, width=40,  mode=dv.DATAVIEW_CELL_ACTIVATABLE)
         
-        if 0:
+        if 1:
             br = dv.DataViewBitmapRenderer(mode=dv.DATAVIEW_CELL_INERT)
-            c7 = dv.DataViewColumn(self.makeBlankBitmapBundle(),   # title
+            c7 = dv.DataViewColumn("Screen Shot",   # title
                                    br,        # renderer
                                    7,
                                    width=int(IMG_DFLT_WID/2))         # data model column
             self.dvc.AppendColumn(c7)            
         else:
-            self.dvc.AppendBitmapColumn("Screen Shot",
+            self.dvc.AppendBitmapColumn("Screen Shot", #self.makeBlankBitmapBundle(),  #"Screen Shot",
                                         7,
                                         width=int(IMG_DFLT_WID/2),
                                         mode=dv.DATAVIEW_CELL_INERT)
-
-        # Notice how we pull the data from col 3, but this is the 6th column
-        # added to the DVC. The order of the view columns is not dependent on
-        # the order of the model columns at all.
-        # c5 = self.dvc.AppendTextColumn("id", 3, width=40,  mode=dv.DATAVIEW_CELL_EDITABLE)
-        # c5.Alignment = wx.ALIGN_RIGHT
 
         # Set some additional attributes for all the columns
         for c in self.dvc.Columns:
@@ -352,22 +382,63 @@ class ViewPanel(wx.Panel):
         f.Show()
 
     def makeBlankBitmapBundle(self):
-        # Just a little helper function to make an empty image for our
-        # model to use.
         empty = wx.Bitmap(int(IMG_DFLT_WID/2),int(IMG_DFLT_HGT/2),32)
         dc = wx.MemoryDC(empty)
         dc.SetBackground(wx.Brush((0,0,0,0)))
         dc.Clear()
         del dc
         bun = wx.BitmapBundle.FromBitmap(empty)
+        # self.log.write(str(type(bun)))
         return bun
+
+    def load_project_data(self, cache_dir):
+        # Load the project data from JSON into a list of dictionary entries
+        self.items = list()
+
+        load_path = os.path.join(cache_dir, "oshwa_projects.json" if USE_FULL_JSON else "oshwa_projects_mini.json")
+        if os.path.exists(load_path):
+            with open(load_path, mode="r", encoding=locale.getencoding()) as inpfile:
+                self.data = json.load(inpfile)
+                for i in self.data:
+                    self.items.append(i)
+                    
+        self.built_data = dict()
+        for item in self.items:
+              category_name = item['primaryType']
+              project = Project(item.get('oshwaUid',''),
+                                item.get('country',''),
+                                item.get('projectName',''),
+                                item.get('projectWebsite',''),
+                                item.get('projectDescription',''),
+                                item.get('documentationUrl',''),
+                                category_name,
+                                self.makeBlankBitmapBundle())
+              
+              category = self.built_data.get(category_name)
+              if category is None:
+                category = Category(category_name)
+                self.built_data[category_name] = category
+              category.projects.append(project)
+
+        #self.items = None
+        data = list(self.built_data.values())
+
+        # for i in range(0,len(fr.data)):
+        # ...   category = fr.data[i]
+        # ...   for j in range(0,len(category.projects)):
+        # ...     project = category.projects[j]
+        # ...     print(f" {project.uid}",end="")
+
+        return data
+
+
 
 class OSHWAFrame(wx.Frame):
     def __init__(self):
         super().__init__(None, title="OSHWA API Browser", style=wx.DEFAULT_FRAME_STYLE) #size=(900, 700))
         
         # Start the persistent worker
-        self.worker = PlaywrightWorker(self,
+        self.worker = PlaywrightWorker(self, cache_dir=CACHE_DIR,
                         viewport_width=2*IMG_DFLT_WID,
                         viewport_height=2*IMG_DFLT_HGT)
 
@@ -397,7 +468,6 @@ class OSHWAFrame(wx.Frame):
         # Revert state so user won't see maximized
         self.Maximize(False)
         
-        
         # --- Human Factors Calculations ---
         # Scale to 85% of usable area
         target_w = int(usable_w * 2 / 3)
@@ -411,10 +481,6 @@ class OSHWAFrame(wx.Frame):
         # Calculate font scale (Baseline: ~1030px for 1080p Gnome displays)
         scale_factor = usable_h / baseline
         
-        # Load the project data from JSON into a list of dictionary entries
-        # named self.items then load the projects into the model
-        self.load_project_data(self.worker.cache_dir)
-
         # Initialize the Panel and UI
         self._set_up_ui(target_w, target_h, scale_factor)
         
@@ -426,9 +492,12 @@ class OSHWAFrame(wx.Frame):
         self.SetSize((width, height))
 
         # Basic UI Setup
-        panel = ViewPanel(self, Log(), data=self.data)
+        self.panel = ViewPanel(self, Log()) #, data=self.data)
+
+
         # vbox = wx.BoxSizer(wx.VERTICAL)
-        
+
+
         # self.status = wx.StaticText(panel, label="Select a project to view website...")
         # self.image_ctrl = wx.StaticBitmap(panel, size=(IMG_DFLT_WID/2, IMG_DFLT_HGT/2))
         # # Add a placeholder bitmap
@@ -450,6 +519,17 @@ class OSHWAFrame(wx.Frame):
         dc.Clear()
         del dc
         return empty
+        
+    def makeBlankBitmapBundle(self):
+        # Just a little helper function to make an empty image for our
+        # model to use.
+        empty = wx.Bitmap(int(IMG_DFLT_WID/2),int(IMG_DFLT_HGT/2),32)
+        dc = wx.MemoryDC(empty)
+        dc.SetBackground(wx.Brush((0,0,0,0)))
+        dc.Clear()
+        del dc
+        bun = wx.BitmapBundle.FromBitmap(empty)
+        return bun
 
     def on_fetch_click(self, event):
         # In a real app, these come from your API result selection
@@ -466,48 +546,21 @@ class OSHWAFrame(wx.Frame):
         self.worker.pending.pop(project_id)
 
         self.status.SetLabel(f"Displaying: {project_id}")
-        img = wx.Image(path, wx.BITMAP_TYPE_ANY)
+        img = wx.Image(path, wx.BITMAP_TYPE_ANY) #wx.BITMAP_TYPE_PNG)
         # Scale to fit UI
         img = img.Scale(int(IMG_DFLT_WID/2), int(IMG_DFLT_HGT/2), wx.IMAGE_QUALITY_HIGH)
-        self.image_ctrl.SetBitmap(wx.Bitmap(img))
+
+        self.panel.model.screenshots_index[project_id] = wx.BitmapBundle.FromImage(img)
+
+        # to verify can use
+        #   node.screenshot.GetBitmap(node.screenshot.GetDefaultSize())
+        
+        # self.image_ctrl.SetBitmap(wx.Bitmap(img))
+
         self.Refresh()
 
     def on_screenshot_error(self, project_id, error):
         self.status.SetLabel(f"Error rendering {project_id}: {error}")
-
-    def load_project_data(self, cache_dir):
-        # Load the project data from JSON into a list of dictionary entries
-        self.items = list()
-
-        load_path = os.path.join(cache_dir, "oshwa_projects.json")
-        if os.path.exists(load_path):
-            with open(load_path, mode="r", encoding=locale.getencoding()) as inpfile:
-                self.data = json.load(inpfile)
-                for i in self.data:
-                    self.items.append(i)
-        
-        self.data = dict()
-        for item in self.items:
-              category_name = item['primaryType']
-              project = Project(item.get('oshwaUid',''),
-                                item.get('country',''),
-                                item.get('projectName',''),
-                                item.get('projectWebsite',''),
-                                item.get('projectDescription',''),
-                                item.get('documentationUrl',''),
-                                category_name,
-                                "Screenshot pending")
-#TODO:
-# 02:13:16: Debug: Wrong type returned from the model for column 7: wxBitmapBundle required but actual type is string
-              
-              category = self.data.get(category_name)
-              if category is None:
-                category = Category(category_name)
-                self.data[category_name] = category
-              category.projects.append(project)
-
-        self.items = None
-        self.data = list(self.data.values())
 
 
 if __name__ == "__main__":
