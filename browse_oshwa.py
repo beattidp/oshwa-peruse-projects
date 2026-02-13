@@ -35,9 +35,8 @@ class Project(object):
         self.primary_category=primary_category
         self.screenshot=screenshot
 
-
-    def __repr__(self):
-        return 'Project: %s-"%s"' % (self.uid, self.name)
+    # def __repr__(self):
+    #     return 'Project: %s-"%s"' % (self.uid, self.name)
 
 
 class Category(object):
@@ -45,8 +44,8 @@ class Category(object):
         self.name = name
         self.projects = []
 
-    def __repr__(self):
-        return 'Primary_Type: ' + self.name
+    # def __repr__(self):
+    #     return 'Primary_Type: ' + self.name
 
 class Log:
     def WriteText(self, text):
@@ -244,6 +243,7 @@ class DataListModel(dv.PyDataViewModel):
         hit = os.path.join(CACHE_DIR, f"{uid}.png")
         if not os.path.exists(hit):
             self.panel_ref.GetParent().worker.request_screenshot(uid, site_url)
+
 
         return self.screenshots_index[uid]
                
@@ -563,9 +563,20 @@ class OSHWAFrame(wx.Frame):
         self.status.SetLabel(f"Error rendering {project_id}: {error}")
 
 
+PYCRUST = True
+
 if __name__ == "__main__":
     app = wx.App()
     wx.Log.SetActiveTarget(wx.LogStderr())
     fr = OSHWAFrame()
     fr.Show()
+    
+    # inspect the running wxPython app in
+    # separate frame when PYCRUST is True
+    if PYCRUST==True:
+        from wx.py.crust import CrustFrame
+        crust = CrustFrame(None)
+        crust.Show()
+
     app.MainLoop()
+
