@@ -1,0 +1,15 @@
+# oshwa-peruse-projects
+
+_Intended purpose here is to browse the OSHWA-certified projects with some sort of photos/thumbnails corresponding to each project site._
+
+The [OSHWA projects page](https://certification.oshwa.org/list.html) has over 3,000 projects and growing, leaving a rather cumbersome exercise to look through project names and descriptions. Without a photograph (or link to one), the user is left to click through to each project site to see what it's about.
+
+The object model for the API has only links to a project page and documentation page but does not include a photograph or direct link to photo only. To add the potentially edifying visual component, this application can fetch projects sites from URLs and capture screen shots directly using Playwright and (headless) Chrome. And yes, the site could be scraped with an attempt to determine the main or largest graphic, but using a full browser in a worker thread, the site screenshots are probably going to be pretty good.
+
+---
+The environment (e.g. ``venv``) can be populated with the required PyPI installs using ``requirements.txt``.
+
+To sign up for an API token, just a first and last name and email address are required. This is achieved with ``util/oshwa_api_signup.py``. The retrieved token is written to a file at ``~/.oshwa_token``.
+
+The full set of project data is then retrieved using ``util/oshwa_get_all_projects.py`` and written to a local file ``./oshwa_projects.json``.
+At that point, assuming Playwright and chrome-headless or other browser of choice _(installed by ``playwright install``)_ are present, the application ``main.py`` can be run.
