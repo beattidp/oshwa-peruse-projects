@@ -17,8 +17,14 @@ class MainFrame(wx.Frame):
         
         # Left side: ListCtrl
         self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES)
-        self.list_ctrl.InsertColumn(0, "UID", width=120)
-        self.list_ctrl.InsertColumn(1, "Screenshot", width=280)
+        self.list_ctrl.InsertColumn(0, "Category", width=120)
+        self.list_ctrl.InsertColumn(1, "Project ID", width=100)
+        self.list_ctrl.InsertColumn(2, "Country", width=100)
+        self.list_ctrl.InsertColumn(3, "Name", width=200)
+        self.list_ctrl.InsertColumn(4, "Description", width=300)
+        self.list_ctrl.InsertColumn(5, "Documentation", width=150)
+        self.list_ctrl.InsertColumn(6, "Site URL", width=150)
+        self.list_ctrl.InsertColumn(7, "Screenshot", width=280)
         
         # We need an ImageList for thumbnails (256x192)
         self.image_list = wx.ImageList(256, 192)
@@ -36,9 +42,15 @@ class MainFrame(wx.Frame):
         self.item_image_map = {} # uid -> image index
         
         for idx, item in enumerate(self.data):
-            self.list_ctrl.InsertItem(idx, item['uid'])
-            self.list_ctrl.SetItem(idx, 1, "")
-            self.list_ctrl.SetItemColumnImage(idx, 1, self.default_img_idx)
+            self.list_ctrl.InsertItem(idx, str(item.get('primaryType', '')))
+            self.list_ctrl.SetItem(idx, 1, str(item.get('uid', '')))
+            self.list_ctrl.SetItem(idx, 2, str(item.get('country', '')))
+            self.list_ctrl.SetItem(idx, 3, str(item.get('projectName', '')))
+            self.list_ctrl.SetItem(idx, 4, str(item.get('projectDescription', '')))
+            self.list_ctrl.SetItem(idx, 5, str(item.get('documentationUrl', '')))
+            self.list_ctrl.SetItem(idx, 6, str(item.get('url', '')))
+            self.list_ctrl.SetItem(idx, 7, "")
+            self.list_ctrl.SetItemColumnImage(idx, 7, self.default_img_idx)
             
         sizer.Add(self.list_ctrl, 1, wx.EXPAND | wx.ALL, 10)
         
@@ -152,7 +164,7 @@ class MainFrame(wx.Frame):
             idx = self.image_list.Add(bmp)
             self.item_image_map[uid] = idx
             
-        self.list_ctrl.SetItemColumnImage(list_idx, 1, self.item_image_map[uid])
+        self.list_ctrl.SetItemColumnImage(list_idx, 7, self.item_image_map[uid])
 
 class MyApp(wx.App):
     def OnInit(self):
@@ -162,5 +174,19 @@ class MyApp(wx.App):
         return True
 
 if __name__ == "__main__":
+    import argparse
+    import glob
+    
+    parser = argparse.ArgumentParser(description="OSHWA Project Viewer")
+    parser.add_argument("--clear-cache", action="store_true", help="Invalidate the cache by deleting all cached screenshots")
+    args = parser.parse_args()
+    
+    if args.clear_cache:
+        for f in glob.glob(os.path.join("cache", "*.png")):
+            try:
+                os.remove(f)
+            except OSError as e:
+                print(f"Error removing cached file {f}: {e}")
+                
     app = MyApp(clearSigInt=True)
     app.MainLoop()

@@ -17,9 +17,17 @@ def parse_oshwa_projects(filepath: str) -> list[dict]:
                 uid = record.get("oshwaUid")
                 website = record.get("projectWebsite")
                 if uid and website:
+                    if "github.com" in website.lower() and "#readme" not in website.lower():
+                        website = website.rstrip("/") + "#readme"
+                        
                     results.append({
                         "uid": uid,
-                        "url": website
+                        "url": website,
+                        "country": record.get("country", ""),
+                        "projectName": record.get("projectName", ""),
+                        "projectDescription": record.get("projectDescription", ""),
+                        "documentationUrl": record.get("documentationUrl", ""),
+                        "primaryType": record.get("primaryType", "")
                     })
         except json.JSONDecodeError as e:
             print(f"Error parsing JSON: {e}")
