@@ -7,6 +7,7 @@ from PIL import Image
 from playwright.async_api import async_playwright
 
 CACHE_DIR = "cache"
+MAX_CONCURRENT_SCREENSHOTS = 6
 
 class ScreenshotWorker(threading.Thread):
     def __init__(self):
@@ -22,7 +23,7 @@ class ScreenshotWorker(threading.Thread):
 
     async def main_loop(self):
         self.queue = asyncio.Queue()
-        self.semaphore = asyncio.Semaphore(6)
+        self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCREENSHOTS)
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -53,8 +54,7 @@ class ScreenshotWorker(threading.Thread):
             try:
                 context = await browser.new_context(viewport={'width': 1024, 'height': 768})
                 page = await context.new_page()
-                
-                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 img_bytes = await page.screenshot()
                 
                 def resize_and_save():

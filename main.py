@@ -65,9 +65,15 @@ class MainFrame(wx.Frame):
         del vdc
         
         self.static_bitmap = wx.StaticBitmap(self.img_panel, bitmap=viewer_empty_bmp)
-        img_sizer.AddStretchSpacer()
-        img_sizer.Add(self.static_bitmap, 0, wx.ALIGN_CENTER)
-        img_sizer.AddStretchSpacer()
+        
+        self.desc_text = wx.TextCtrl(self.img_panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_BESTWRAP | wx.BORDER_NONE)
+        self.desc_text.SetBackgroundColour(self.img_panel.GetBackgroundColour())
+        font = self.desc_text.GetFont()
+        font.SetPointSize(11)
+        self.desc_text.SetFont(font)
+        
+        img_sizer.Add(self.static_bitmap, 0, wx.ALIGN_CENTER | wx.ALL, 10)
+        img_sizer.Add(self.desc_text, 1, wx.EXPAND | wx.ALL, 10)
         self.img_panel.SetSizer(img_sizer)
         
         sizer.Add(self.img_panel, 1, wx.EXPAND | wx.ALL, 10)
@@ -76,6 +82,7 @@ class MainFrame(wx.Frame):
         
         # Event binding
         self.list_ctrl.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_item_selected)
+        self.list_ctrl.Bind(wx.EVT_LEFT_DOWN, self.on_left_down)
         
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.on_timer, self.timer)
@@ -106,11 +113,24 @@ class MainFrame(wx.Frame):
                 self.pending_requests.add(uid)
                 self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
 
+    def on_left_down(self, event):
+        pos = event.GetPosition()
+        item, flags, subitem = self.list_ctrl.HitTestSubItem(pos)
+        if item != wx.NOT_FOUND and subitem == 6: # Site URL column
+            url = self.data[item].get('url', '')
+            if url:
+                import webbrowser
+                webbrowser.open(url)
+        event.Skip()
+
     def on_item_selected(self, event):
         idx = event.GetIndex()
         item = self.data[idx]
         uid = item['uid']
         url = item['url']
+        
+        desc = item.get('projectDescription', '')
+        self.desc_text.SetValue(desc)
         
         cache_path = os.path.join("cache", f"{uid}.png")
         if os.path.exists(cache_path):
