@@ -1,0 +1,166 @@
+import wx
+import os
+from oshwa_parser import parse_oshwa_projects
+from playwright_worker import ScreenshotWorker
+
+class MainFrame(wx.Frame):
+    def __init__(self, data):
+        super().__init__(None, title="OSHWA Project Viewer", size=(1200, 700))
+        self.data = data
+        self.worker = ScreenshotWorker()
+        self.worker.start()
+        self.pending_requests = set()
+
+        # UI Setup
+        panel = wx.Panel(self)
+        sizer = wx.BoxSizer(wx.HORIZONTAL)
+        
+        # Left side: ListCtrl
+        self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES)
+        self.list_ctrl.InsertColumn(0, "UID", width=120)
+        self.list_ctrl.InsertColumn(1, "Screenshot", width=280)
+        
+        # We need an ImageList for thumbnails (256x192)
+        self.image_list = wx.ImageList(256, 192)
+        
+        # Default empty image
+        empty_bmp = wx.Bitmap(256, 192)
+        dc = wx.MemoryDC(empty_bmp)
+        dc.SetBackground(wx.Brush(wx.Colour(230, 230, 230)))
+        dc.Clear()
+        del dc
+        self.default_img_idx = self.image_list.Add(empty_bmp)
+        
+        self.list_ctrl.AssignImageList(self.image_list, wx.IMAGE_LIST_SMALL)
+        
+        self.item_image_map = {} # uid -> image index
+        
+        for idx, item in enumerate(self.data):
+            self.list_ctrl.InsertItem(idx, item['uid'])
+            self.list_ctrl.SetItem(idx, 1, "")
+            self.list_ctrl.SetItemColumnImage(idx, 1, self.default_img_idx)
+            
+        sizer.Add(self.list_ctrl, 1, wx.EXPAND | wx.ALL, 10)
+        
+        # Right side: Image Viewer
+        self.img_panel = wx.Panel(panel)
+        img_sizer = wx.BoxSizer(wx.VERTICAL)
+        # Default image for viewer (512x384)
+        viewer_empty_bmp = wx.Bitmap(512, 384)
+        vdc = wx.MemoryDC(viewer_empty_bmp)
+        vdc.SetBackground(wx.Brush(wx.Colour(230, 230, 230)))
+        vdc.Clear()
+        del vdc
+        
+        self.static_bitmap = wx.StaticBitmap(self.img_panel, bitmap=viewer_empty_bmp)
+        img_sizer.AddStretchSpacer()
+        img_sizer.Add(self.static_bitmap, 0, wx.ALIGN_CENTER)
+        img_sizer.AddStretchSpacer()
+        self.img_panel.SetSizer(img_sizer)
+        
+        sizer.Add(self.img_panel, 1, wx.EXPAND | wx.ALL, 10)
+        
+        panel.SetSizer(sizer)
+        
+        # Event binding
+        self.list_ctrl.Bind(wx.EVT_LIST_ITEM_SELECTED, self.on_item_selected)
+        
+        self.timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.on_timer, self.timer)
+        self.timer.Start(250)
+
+    def on_timer(self, event):
+        self.check_visible_items()
+
+    def check_visible_items(self):
+        if not self.list_ctrl.GetItemCount():
+            return
+            
+        top_item = self.list_ctrl.GetTopItem()
+        count = self.list_ctrl.GetCountPerPage()
+        bottom_item = min(self.list_ctrl.GetItemCount() - 1, top_item + count)
+        
+        for idx in range(top_item, bottom_item + 1):
+            uid = self.data[idx]['uid']
+            url = self.data[idx]['url']
+            
+            if uid in self.item_image_map or uid in self.pending_requests:
+                continue
+                
+            cache_path = os.path.join("cache", f"{uid}.png")
+            if os.path.exists(cache_path):
+                self.update_list_thumbnail(uid, cache_path)
+            else:
+                self.pending_requests.add(uid)
+                self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
+
+    def on_item_selected(self, event):
+        idx = event.GetIndex()
+        item = self.data[idx]
+        uid = item['uid']
+        url = item['url']
+        
+        cache_path = os.path.join("cache", f"{uid}.png")
+        if os.path.exists(cache_path):
+            self.update_image_display(uid, cache_path)
+            self.update_list_thumbnail(uid, cache_path)
+        else:
+            if uid not in self.pending_requests:
+                self.pending_requests.add(uid)
+                self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
+
+    def on_screenshot_ready(self, uid, cache_path):
+        if uid in self.pending_requests:
+            self.pending_requests.remove(uid)
+            
+        # Update the list thumbnail regardless of selection
+        self.update_list_thumbnail(uid, cache_path)
+
+        # Update the right pane only if this item is currently selected
+        selected_idx = self.list_ctrl.GetFirstSelected()
+        if selected_idx != -1:
+            selected_uid = self.data[selected_idx]['uid']
+            if selected_uid == uid:
+                self.update_image_display(uid, cache_path)
+
+    def update_image_display(self, uid, cache_path):
+        if not os.path.exists(cache_path):
+            return
+            
+        img = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
+        bmp = wx.Bitmap(img)
+        self.static_bitmap.SetBitmap(bmp)
+        self.img_panel.Layout()
+
+    def update_list_thumbnail(self, uid, cache_path):
+        if not os.path.exists(cache_path):
+            return
+            
+        # Find item idx
+        list_idx = -1
+        for i, item in enumerate(self.data):
+            if item['uid'] == uid:
+                list_idx = i
+                break
+                
+        if list_idx == -1: return
+        
+        if uid not in self.item_image_map:
+            img = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
+            thumb = img.Scale(256, 192, wx.IMAGE_QUALITY_HIGH)
+            bmp = wx.Bitmap(thumb)
+            idx = self.image_list.Add(bmp)
+            self.item_image_map[uid] = idx
+            
+        self.list_ctrl.SetItemColumnImage(list_idx, 1, self.item_image_map[uid])
+
+class MyApp(wx.App):
+    def OnInit(self):
+        data = parse_oshwa_projects("oshwa_projects.json")
+        frame = MainFrame(data)
+        frame.Show()
+        return True
+
+if __name__ == "__main__":
+    app = MyApp(clearSigInt=True)
+    app.MainLoop()
