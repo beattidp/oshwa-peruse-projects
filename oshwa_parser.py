@@ -27,6 +27,7 @@ def parse_oshwa_projects(filepath: str) -> list[dict]:
                         "projectName": record.get("projectName", ""),
                         "projectDescription": record.get("projectDescription", ""),
                         "documentationUrl": record.get("documentationUrl", ""),
+                        "certificationDate": record.get("certificationDate", ""),
                         "primaryType": record.get("primaryType", "")
                     })
         except json.JSONDecodeError as e:

@@ -15,6 +15,33 @@ class ProjectNode:
         self.children = []
         self.expanded = False
 
+class WordWrapRenderer(dv.DataViewCustomRenderer):
+    def __init__(self):
+        super().__init__("string", dv.DATAVIEW_CELL_INERT, wx.ALIGN_LEFT | wx.ALIGN_TOP)
+        self.value = ""
+
+    def SetValue(self, value):
+        self.value = value
+        return True
+
+    def GetValue(self):
+        return self.value
+
+    def GetSize(self):
+        return wx.Size(50, 50)  # Width is flexible, height is constrained by SetRowHeight
+
+    def Render(self, rect, dc, state):
+        if not self.value:
+            return True
+        
+        # Use simple text drawing with wrap
+        dc.SetFont(self.GetView().GetFont())
+        dc.DrawLabel(self.value, rect, wx.ALIGN_LEFT | wx.ALIGN_TOP)
+        return True
+
+    def HasEditorCtrl(self):
+        return False
+
 class ProjectDataViewModel(dv.PyDataViewModel):
     def __init__(self, data):
         super().__init__()
@@ -105,7 +132,7 @@ class ProjectDataViewModel(dv.PyDataViewModel):
         if col == 2: return str(data.get('country', ''))
         if col == 3: return str(data.get('projectName', ''))
         if col == 4: return str(data.get('projectDescription', ''))
-        if col == 5: return str(data.get('documentationUrl', ''))
+        if col == 5: return str(data.get('certificationDate', ''))
         if col == 6: return str(data.get('url', ''))
         if col == 7:
             if 'thumbnail' in data:
@@ -143,6 +170,7 @@ class MainFrame(wx.Frame):
         self.pending_requests = set()
         
         self.current_font_size = 11
+        self.current_image = None
 
         # UI Setup
         self.splitter = wx.SplitterWindow(self, style=wx.SP_3D | wx.SP_LIVE_UPDATE)
@@ -157,8 +185,13 @@ class MainFrame(wx.Frame):
         self.dvc.AppendTextColumn("Project ID", 1, width=100, mode=dv.DATAVIEW_CELL_INERT)
         self.dvc.AppendTextColumn("Country", 2, width=100, mode=dv.DATAVIEW_CELL_INERT)
         self.dvc.AppendTextColumn("Name", 3, width=200, mode=dv.DATAVIEW_CELL_INERT)
-        self.dvc.AppendTextColumn("Description", 4, width=300, mode=dv.DATAVIEW_CELL_INERT)
-        self.dvc.AppendTextColumn("Documentation", 5, width=150, mode=dv.DATAVIEW_CELL_INERT)
+        
+        # Custom renderer for Description to handle word wrap
+        desc_renderer = WordWrapRenderer()
+        desc_col = dv.DataViewColumn("Description", desc_renderer, 4, width=300)
+        self.dvc.AppendColumn(desc_col)
+        
+        self.dvc.AppendTextColumn("Date", 5, width=150, mode=dv.DATAVIEW_CELL_INERT)
         self.dvc.AppendTextColumn("Site URL", 6, width=150, mode=dv.DATAVIEW_CELL_ACTIVATABLE)
         self.dvc.AppendBitmapColumn("Screenshot", 7, width=280, mode=dv.DATAVIEW_CELL_INERT)
         
@@ -175,9 +208,13 @@ class MainFrame(wx.Frame):
         vdc.SetBackground(wx.Brush(wx.Colour(230, 230, 230)))
         vdc.Clear()
         del vdc
+        
+        self.current_image = viewer_empty_bmp.ConvertToImage()
         self.static_bitmap = wx.StaticBitmap(self.img_panel, bitmap=viewer_empty_bmp)
         self.static_bitmap.Bind(wx.EVT_LEFT_DOWN, self.on_image_clicked)
         self.static_bitmap.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+        
+        self.img_panel.Bind(wx.EVT_SIZE, self.on_img_panel_size)
         
         # Hyperlinks for Project and Docs
         self.links_panel = wx.Panel(self.img_panel)
@@ -392,10 +429,18 @@ class MainFrame(wx.Frame):
                 self.pending_requests.add(uid)
                 self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
 
+    def on_img_panel_size(self, event):
+        self.scale_current_image()
+        event.Skip()
+
+    def scale_current_image(self, force=False):
+        # Disabled for comparison
+        pass
+
     def update_image_display(self, cache_path):
         if not os.path.exists(cache_path): return
-        img = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
-        bmp = wx.Bitmap(img)
+        self.current_image = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
+        bmp = wx.Bitmap(self.current_image)
         self.static_bitmap.SetBitmap(bmp)
         self.img_panel.Layout()
 
