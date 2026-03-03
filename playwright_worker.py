@@ -22,31 +22,33 @@ class ScreenshotWorker(threading.Thread):
         self.loop.run_until_complete(self.main_loop())
 
     async def main_loop(self):
-        self.queue = asyncio.Queue()
+        self.queue = asyncio.PriorityQueue()
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCREENSHOTS)
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             
             while True:
-                req = await self.queue.get()
-                if req is None:
+                # PriorityQueue returns (priority, data)
+                item = await self.queue.get()
+                if item is None:
                     break
                 
-                uid, url, callback = req
-                asyncio.create_task(self.process_request(browser, uid, url, callback))
+                priority, uid, url, callback, force_refresh = item
+                asyncio.create_task(self.process_request(browser, uid, url, callback, force_refresh))
 
             await browser.close()
 
-    async def process_request(self, browser, uid, url, callback):
+    async def process_request(self, browser, uid, url, callback, force_refresh):
         cache_path = os.path.join(CACHE_DIR, f"{uid}.png")
         
-        if os.path.exists(cache_path):
+        if not force_refresh and os.path.exists(cache_path):
             wx.CallAfter(callback, uid, cache_path)
             return
 
         async with self.semaphore:
-            if os.path.exists(cache_path):
+            # Re-check cache inside semaphore if not forcing
+            if not force_refresh and os.path.exists(cache_path):
                 wx.CallAfter(callback, uid, cache_path)
                 return
 
@@ -72,11 +74,15 @@ class ScreenshotWorker(threading.Thread):
                 if context:
                     await context.close()
 
-    def request_screenshot(self, uid, url, callback):
+    def request_screenshot(self, uid, url, callback, priority=10, force_refresh=False):
         if not self.loop or not self.queue:
             return
             
         def _enqueue():
-            self.queue.put_nowait((uid, url, callback))
+            # (priority, uid, url, callback, force_refresh)
+            # Standard background fetches use priority 10
+            # Selection-based fetches use priority 5
+            # Manual reloads use priority 0
+            self.queue.put_nowait((priority, uid, url, callback, force_refresh))
             
         self.loop.call_soon_threadsafe(_enqueue)

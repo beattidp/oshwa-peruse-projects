@@ -222,9 +222,12 @@ class MainFrame(wx.Frame):
         
         self.project_link = wx.adv.HyperlinkCtrl(self.links_panel, id=wx.ID_ANY, label="Project Site", url="")
         self.docs_link = wx.adv.HyperlinkCtrl(self.links_panel, id=wx.ID_ANY, label="Documentation Site", url="")
+        self.reload_link = wx.adv.HyperlinkCtrl(self.links_panel, id=wx.ID_ANY, label="Reload", url="")
+        self.reload_link.Bind(wx.adv.EVT_HYPERLINK, self.on_reload_screenshot)
         
         links_sizer.Add(self.project_link, 0, wx.ALL, 5)
         links_sizer.Add(self.docs_link, 0, wx.ALL, 5)
+        links_sizer.Add(self.reload_link, 0, wx.ALL, 5)
         self.links_panel.SetSizer(links_sizer)
         self.links_panel.Hide() # Initially hidden
         
@@ -253,13 +256,16 @@ class MainFrame(wx.Frame):
         # Accelerators for font scaling
         id_increase_font = wx.NewIdRef()
         id_decrease_font = wx.NewIdRef()
+        id_reload = wx.NewIdRef()
         self.Bind(wx.EVT_MENU, lambda e: self.change_font_size(1), id=id_increase_font)
         self.Bind(wx.EVT_MENU, lambda e: self.change_font_size(-1), id=id_decrease_font)
+        self.Bind(wx.EVT_MENU, self.on_reload_screenshot, id=id_reload)
         
         accel_tbl = wx.AcceleratorTable([
             (wx.ACCEL_CTRL, ord('='), id_increase_font),
             (wx.ACCEL_CTRL, ord('+'), id_increase_font),
             (wx.ACCEL_CTRL, ord('-'), id_decrease_font),
+            (wx.ACCEL_NORMAL, wx.WXK_F5, id_reload),
         ])
         self.SetAcceleratorTable(accel_tbl)
         
@@ -354,7 +360,8 @@ class MainFrame(wx.Frame):
             self.model.ItemChanged(item)
         else:
             self.pending_requests.add(uid)
-            self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
+            # Priority 10 for background timer fetches
+            self.worker.request_screenshot(uid, url, self.on_screenshot_ready, priority=10)
 
     def load_thumbnail(self, node, cache_path):
         if not os.path.exists(cache_path): return
@@ -388,6 +395,25 @@ class MainFrame(wx.Frame):
                     import webbrowser
                     webbrowser.open(url)
         event.Skip()
+
+    def on_reload_screenshot(self, event):
+        item = self.dvc.GetSelection()
+        if not item.IsOk(): return
+        
+        node = self.model.ItemToObject(item)
+        if getattr(node, 'is_category', False): return
+        
+        uid = node.data.get('uid')
+        url = node.data.get('url')
+        if not uid or not url: return
+        
+        # Priority 0 for user-initiated reloads, bypassing cache
+        if uid in self.pending_requests:
+            # We don't remove it from pending_requests because we want to avoid duplicate fetches
+            # but priority 0 will jump it to the front of the queue
+            pass
+        
+        self.worker.request_screenshot(uid, url, self.on_screenshot_ready, priority=0, force_refresh=True)
 
     def on_item_activated(self, event):
         pass # Remove default double click routing for DVC 6th col
@@ -427,7 +453,8 @@ class MainFrame(wx.Frame):
         else:
             if uid not in self.pending_requests:
                 self.pending_requests.add(uid)
-                self.worker.request_screenshot(uid, url, self.on_screenshot_ready)
+                # Priority 5 for active selection fetches
+                self.worker.request_screenshot(uid, url, self.on_screenshot_ready, priority=5)
 
     def on_img_panel_size(self, event):
         self.scale_current_image()
