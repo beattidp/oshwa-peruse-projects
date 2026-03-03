@@ -4,6 +4,8 @@ import wx.dataview as dv
 import os
 import argparse
 import glob
+import shlex
+import re
 from oshwa_parser import parse_oshwa_projects
 from playwright_worker import ScreenshotWorker
 
@@ -45,9 +47,11 @@ class WordWrapRenderer(dv.DataViewCustomRenderer):
 class ProjectDataViewModel(dv.PyDataViewModel):
     def __init__(self, data):
         super().__init__()
-        self.data = data
+        self.all_data = data
         self.root_nodes = []
         self.node_by_uid = {}
+        self.filter_query = ""
+        self.filter_is_regex = False
         self.build_tree()
         self.default_bmp = self._create_empty_bitmap()
 
@@ -60,23 +64,56 @@ class ProjectDataViewModel(dv.PyDataViewModel):
         return empty_bmp
 
     def build_tree(self):
+        self.root_nodes = []
+        self.node_by_uid = {}
         categories = {}
-        for item in self.data:
-            cat_name = item.get('primaryType', 'Unknown')
-            if not cat_name:
-                cat_name = 'Unknown'
+        
+        query = self.filter_query.strip()
+        is_regex = self.filter_is_regex
+        
+        tokens = []
+        if query and not is_regex:
+            try:
+                tokens = shlex.split(query)
+            except:
+                tokens = [query]
+
+        for item in self.all_data:
+            if query:
+                text_to_search = f"{item.get('uid', '')} {item.get('projectName', '')} {item.get('projectDescription', '')} {item.get('primaryType', '')}".lower()
+                if is_regex:
+                    try:
+                        if not re.search(query, text_to_search, re.IGNORECASE):
+                            continue
+                    except:
+                        pass # Invalid regex
+                else:
+                    match = True
+                    for t in tokens:
+                        if t.lower() not in text_to_search:
+                            match = False
+                            break
+                    if not match:
+                        continue
+
+            cat_name = item.get('primaryType', 'Unknown') or 'Unknown'
             if cat_name not in categories:
                 cat_node = ProjectNode(None, {'name': cat_name}, is_category=True)
                 categories[cat_name] = cat_node
                 self.root_nodes.append(cat_node)
             
-            # Format item data properly mapping to columns
             child_node = ProjectNode(categories[cat_name], item, is_category=False)
             categories[cat_name].children.append(child_node)
             if 'uid' in item:
                 self.node_by_uid[item['uid']] = child_node
 
         self.root_nodes.sort(key=lambda n: n.data['name'])
+
+    def set_filter(self, query, is_regex):
+        self.filter_query = query
+        self.filter_is_regex = is_regex
+        self.build_tree()
+        self.Cleared()
 
     def GetColumnCount(self):
         return 8
@@ -238,6 +275,25 @@ class MainFrame(wx.Frame):
         img_sizer.Add(self.static_bitmap, 0, wx.ALIGN_CENTER | wx.ALL, 10)
         img_sizer.Add(self.links_panel, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
         img_sizer.Add(self.desc_text, 1, wx.EXPAND | wx.ALL, 10)
+        
+        # Search Filter Panel
+        self.search_panel = wx.Panel(self.img_panel)
+        search_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        
+        self.search_ctrl = wx.SearchCtrl(self.search_panel, style=wx.TE_PROCESS_ENTER)
+        self.search_ctrl.ShowCancelButton(True)
+        self.search_ctrl.Bind(wx.EVT_TEXT, self.on_search)
+        self.search_ctrl.Bind(wx.EVT_SEARCHCTRL_CANCEL_BTN, self.on_search_cancel)
+        
+        self.regex_cb = wx.CheckBox(self.search_panel, label="Regex")
+        self.regex_cb.Bind(wx.EVT_CHECKBOX, self.on_search)
+        
+        search_sizer.Add(self.search_ctrl, 1, wx.ALL | wx.EXPAND, 5)
+        search_sizer.Add(self.regex_cb, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
+        self.search_panel.SetSizer(search_sizer)
+        
+        img_sizer.Add(self.search_panel, 0, wx.EXPAND | wx.ALL, 5)
+        
         self.img_panel.SetSizer(img_sizer)
         
         # Configure Splitter
@@ -417,6 +473,15 @@ class MainFrame(wx.Frame):
 
     def on_item_activated(self, event):
         pass # Remove default double click routing for DVC 6th col
+
+    def on_search(self, event):
+        query = self.search_ctrl.GetValue()
+        is_regex = self.regex_cb.GetValue()
+        self.model.set_filter(query, is_regex)
+        
+    def on_search_cancel(self, event):
+        self.search_ctrl.SetValue("")
+        self.on_search(event)
 
     def on_item_selected(self, event):
         item = event.GetItem()
