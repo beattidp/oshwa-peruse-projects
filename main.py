@@ -9,6 +9,18 @@ import re
 from oshwa_parser import parse_oshwa_projects
 from playwright_worker import ScreenshotWorker
 
+# Screenshot and Thumbnail Constants
+THUMB_WIDTH = 256
+THUMB_HEIGHT_BASE = 192
+THUMB_CROP_PERCENT = 0.15
+THUMB_HEIGHT_CROP = int(THUMB_HEIGHT_BASE * THUMB_CROP_PERCENT)
+THUMB_HEIGHT = THUMB_HEIGHT_BASE - 2 * THUMB_HEIGHT_CROP
+
+# Viewer Constants
+VIEWER_WIDTH = 512
+DEPTH_MULTIPLIER = 1.5
+VIEWER_HEIGHT = int(VIEWER_WIDTH * (0.75 * DEPTH_MULTIPLIER)) # 0.75 is 4:3 aspect ratio
+
 class ProjectNode:
     def __init__(self, parent, data=None, is_category=False):
         self.parent = parent
@@ -30,7 +42,7 @@ class WordWrapRenderer(dv.DataViewCustomRenderer):
         return self.value
 
     def GetSize(self):
-        return wx.Size(50, 50)  # Width is flexible, height is constrained by SetRowHeight
+        return wx.Size(50, THUMB_HEIGHT)  # Width is flexible, height matches cropped thumbnail
 
     def Render(self, rect, dc, state):
         if not self.value:
@@ -56,7 +68,7 @@ class ProjectDataViewModel(dv.PyDataViewModel):
         self.default_bmp = self._create_empty_bitmap()
 
     def _create_empty_bitmap(self):
-        empty_bmp = wx.Bitmap(256, 192)
+        empty_bmp = wx.Bitmap(THUMB_WIDTH, THUMB_HEIGHT)
         dc = wx.MemoryDC(empty_bmp)
         dc.SetBackground(wx.Brush(wx.Colour(230, 230, 230)))
         dc.Clear()
@@ -230,7 +242,7 @@ class MainFrame(wx.Frame):
         
         self.dvc.AppendTextColumn("Date", 5, width=150, mode=dv.DATAVIEW_CELL_INERT)
         self.dvc.AppendTextColumn("Site URL", 6, width=150, mode=dv.DATAVIEW_CELL_ACTIVATABLE)
-        self.dvc.AppendBitmapColumn("Screenshot", 7, width=280, mode=dv.DATAVIEW_CELL_INERT)
+        self.dvc.AppendBitmapColumn("Screenshot", 7, width=THUMB_WIDTH + 20, mode=dv.DATAVIEW_CELL_INERT)
         
         for i in range(8):
             col = self.dvc.GetColumn(i)
@@ -239,8 +251,8 @@ class MainFrame(wx.Frame):
         # Right side: Image Viewer
         self.img_panel = wx.Panel(self.splitter)
         img_sizer = wx.BoxSizer(wx.VERTICAL)
-        # Default image for viewer (512x384)
-        viewer_empty_bmp = wx.Bitmap(512, 384)
+        # Default image for viewer
+        viewer_empty_bmp = wx.Bitmap(VIEWER_WIDTH, VIEWER_HEIGHT)
         vdc = wx.MemoryDC(viewer_empty_bmp)
         vdc.SetBackground(wx.Brush(wx.Colour(230, 230, 230)))
         vdc.Clear()
@@ -297,7 +309,9 @@ class MainFrame(wx.Frame):
         self.img_panel.SetSizer(img_sizer)
         
         # Configure Splitter
-        self.splitter.SplitVertically(self.dvc, self.img_panel, sashPosition=800)
+        self.splitter.SetSashGravity(1.0) # Right pane gets 0% of extra space, Left pane gets 100%
+        initial_sash_pos = 1400 - (VIEWER_WIDTH + 40)
+        self.splitter.SplitVertically(self.dvc, self.img_panel, sashPosition=initial_sash_pos)
         self.splitter.SetMinimumPaneSize(300)
         
         main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -308,6 +322,7 @@ class MainFrame(wx.Frame):
         self.dvc.Bind(dv.EVT_DATAVIEW_SELECTION_CHANGED, self.on_item_selected)
         self.dvc.Bind(dv.EVT_DATAVIEW_ITEM_ACTIVATED, self.on_item_activated)
         self.dvc.Bind(wx.EVT_KEY_DOWN, self.on_dvc_key)
+        self.dvc.Bind(wx.EVT_SIZE, self.on_dvc_size)
         
         # Accelerators for font scaling
         id_increase_font = wx.NewIdRef()
@@ -328,6 +343,60 @@ class MainFrame(wx.Frame):
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.on_timer, self.timer)
         self.timer.Start(1000)
+
+    def on_dvc_size(self, event):
+        event.Skip()
+        wx.CallAfter(self._adjust_columns)
+        
+    def _adjust_columns(self):
+        if not self.dvc:
+            return
+            
+        total_width = self.dvc.GetClientSize().width
+        if total_width < 100:
+            return
+            
+        thumb_col_idx = 7
+        name_col_idx = 3
+        desc_col_idx = 4
+        
+        # Determine fixed columns target width
+        thumb_target = THUMB_WIDTH + 30
+        
+        # Calculate width of fixed columns
+        fixed_width = 0
+        for i in range(self.dvc.GetColumnCount()):
+            if i not in (name_col_idx, desc_col_idx, thumb_col_idx):
+                fixed_width += self.dvc.GetColumn(i).GetWidth()
+                
+        # Space available for Name, Desc, and Thumb
+        avail_for_flex = total_width - fixed_width
+        
+        # We need at least thumb_target for the thumb column
+        if avail_for_flex <= thumb_target:
+            # Extreme shrink - give thumb whatever is left, or its target if it overflows
+            c_thumb = self.dvc.GetColumn(thumb_col_idx)
+            if c_thumb.GetWidth() != thumb_target: c_thumb.SetWidth(thumb_target)
+            return
+
+        # We have some room for Name and Desc
+        avail_for_name_desc = avail_for_flex - thumb_target
+        
+        # Give 40% to Name, 60% to Desc
+        name_width = max(150, int(avail_for_name_desc * 0.4))
+        desc_width = max(150, avail_for_name_desc - name_width)
+        
+        # If the allocated width is smaller than 150 for either, we might need to shrink other columns
+        # For now, just set them
+        
+        c_name = self.dvc.GetColumn(name_col_idx)
+        if c_name.GetWidth() != name_width: c_name.SetWidth(name_width)
+        
+        c_desc = self.dvc.GetColumn(desc_col_idx)
+        if c_desc.GetWidth() != desc_width: c_desc.SetWidth(desc_width)
+        
+        c_thumb = self.dvc.GetColumn(thumb_col_idx)
+        if c_thumb.GetWidth() != thumb_target: c_thumb.SetWidth(thumb_target)
 
     def on_dvc_key(self, event):
         keycode = event.GetKeyCode()
@@ -408,9 +477,9 @@ class MainFrame(wx.Frame):
         if 'thumbnail' in node.data or uid in self.pending_requests:
             return
             
-        cache_path = os.path.join("cache", f"{uid}.png")
-        if os.path.exists(cache_path):
-            self.load_thumbnail(node, cache_path)
+        thumb_path = os.path.join("cache", f"{uid}_thumb.png")
+        if os.path.exists(thumb_path):
+            self.load_thumbnail(node, thumb_path)
             # Find item and signal change
             item = self.model.ObjectToItem(node)
             self.model.ItemChanged(item)
@@ -419,11 +488,9 @@ class MainFrame(wx.Frame):
             # Priority 10 for background timer fetches
             self.worker.request_screenshot(uid, url, self.on_screenshot_ready, priority=10)
 
-    def load_thumbnail(self, node, cache_path):
-        if not os.path.exists(cache_path): return
-        img = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
-        thumb = img.Scale(256, 192, wx.IMAGE_QUALITY_HIGH)
-        bmp = wx.Bitmap(thumb)
+    def load_thumbnail(self, node, thumb_path):
+        if not os.path.exists(thumb_path): return
+        bmp = wx.Bitmap(wx.Image(thumb_path, wx.BITMAP_TYPE_PNG))
         node.data['thumbnail'] = bmp
 
     def on_screenshot_ready(self, uid, cache_path):
@@ -439,7 +506,8 @@ class MainFrame(wx.Frame):
             # Check if this node is currently selected
             selected_item = self.dvc.GetSelection()
             if selected_item.IsOk() and self.model.ItemToObject(selected_item) == node:
-                self.update_image_display(cache_path)
+                master_path = os.path.join("cache", f"{uid}.png")
+                self.update_image_display(master_path)
 
     def on_image_clicked(self, event):
         item = self.dvc.GetSelection()
@@ -531,8 +599,11 @@ class MainFrame(wx.Frame):
 
     def update_image_display(self, cache_path):
         if not os.path.exists(cache_path): return
-        self.current_image = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
-        bmp = wx.Bitmap(self.current_image)
+        img = wx.Image(cache_path, wx.BITMAP_TYPE_PNG)
+        # Scale master image for display in side panel
+        img = img.Scale(VIEWER_WIDTH, VIEWER_HEIGHT, wx.IMAGE_QUALITY_HIGH)
+        self.current_image = img
+        bmp = wx.Bitmap(img)
         self.static_bitmap.SetBitmap(bmp)
         self.img_panel.Layout()
 

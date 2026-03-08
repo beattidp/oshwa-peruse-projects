@@ -9,6 +9,15 @@ from playwright.async_api import async_playwright
 CACHE_DIR = "cache"
 MAX_CONCURRENT_SCREENSHOTS = 6
 
+# Screenshot and Thumbnail Constants
+SCREENSHOT_WIDTH = 1024
+SCREENSHOT_HEIGHT = 768
+DEPTH_MULTIPLIER = 1.5
+
+THUMB_WIDTH = 256
+THUMB_HEIGHT = 192
+THUMB_CROP_PERCENT = 0.15
+
 class ScreenshotWorker(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
@@ -41,32 +50,67 @@ class ScreenshotWorker(threading.Thread):
 
     async def process_request(self, browser, uid, url, callback, force_refresh):
         cache_path = os.path.join(CACHE_DIR, f"{uid}.png")
+        thumb_path = os.path.join(CACHE_DIR, f"{uid}_thumb.png")
         
-        if not force_refresh and os.path.exists(cache_path):
-            wx.CallAfter(callback, uid, cache_path)
+        if not force_refresh and os.path.exists(thumb_path):
+            wx.CallAfter(callback, uid, thumb_path)
             return
 
         async with self.semaphore:
             # Re-check cache inside semaphore if not forcing
-            if not force_refresh and os.path.exists(cache_path):
-                wx.CallAfter(callback, uid, cache_path)
+            if not force_refresh and os.path.exists(thumb_path):
+                wx.CallAfter(callback, uid, thumb_path)
                 return
 
             context = None
             try:
-                context = await browser.new_context(viewport={'width': 1024, 'height': 768})
+                context = await browser.new_context(viewport={'width': SCREENSHOT_WIDTH, 'height': int(SCREENSHOT_HEIGHT * DEPTH_MULTIPLIER)})
                 page = await context.new_page()
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(url, wait_until="load", timeout=30000)
                 img_bytes = await page.screenshot()
                 
-                def resize_and_save():
+                def process_images():
+                    # Save Master
                     img = Image.open(BytesIO(img_bytes))
-                    scaled_img = img.resize((512, 384), Image.Resampling.LANCZOS)
-                    scaled_img.save(cache_path, format="PNG")
+                    
+                    is_github = url.startswith("https://github.com/")
+                    if is_github:
+                        # Crop 50px top, 312px right, 301px bottom
+                        right = SCREENSHOT_WIDTH - 312
+                        bottom = int(SCREENSHOT_HEIGHT * DEPTH_MULTIPLIER) - 301
+                        img = img.crop((0, 50, right, bottom))
+                        
+                    img.save(cache_path, format="PNG")
 
-                await asyncio.to_thread(resize_and_save)
+                    # Create Thumbnail
+                    if is_github:
+                        # Crop top 534px (2/3 of the 801px cropped master)
+                        crop_box = (0, 0, right, 534)
+                        cropped_img = img.crop(crop_box)
+                    else:
+                        # 1. Crop top portion (original SCREENSHOT_HEIGHT)
+                        crop_box = (0, 0, SCREENSHOT_WIDTH, SCREENSHOT_HEIGHT)
+                        cropped_img = img.crop(crop_box)
+                    
+                    # 2. Scale width to THUMB_WIDTH, preserving aspect ratio
+                    w, h = cropped_img.size
+                    scale = THUMB_WIDTH / float(w)
+                    new_h = int(h * scale)
+                    thumb = cropped_img.resize((THUMB_WIDTH, new_h), Image.Resampling.LANCZOS)
+                    
+                    # 3. Center crop to target thumbnail height
+                    main_crop_h = int(THUMB_HEIGHT * THUMB_CROP_PERCENT)
+                    target_final_h = THUMB_HEIGHT - 2 * main_crop_h
+                    
+                    crop_top = (thumb.height - target_final_h) // 2
+                    thumb_crop_box = (0, crop_top, THUMB_WIDTH, crop_top + target_final_h)
+                    final_thumb = thumb.crop(thumb_crop_box)
+                    
+                    final_thumb.save(thumb_path, format="PNG")
 
-                wx.CallAfter(callback, uid, cache_path)
+                await asyncio.to_thread(process_images)
+
+                wx.CallAfter(callback, uid, thumb_path)
 
             except Exception as e:
                 print(f"Error fetching {url} for {uid}: {e}")
